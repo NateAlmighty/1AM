@@ -4,6 +4,20 @@ let allLeads = [];
 let filteredLeads = [];
 let settings = {};
 
+
+if (window.electronAPI && window.electronAPI.onLogUpdate) {
+  window.electronAPI.onLogUpdate((logData) => {
+    const logsContainer = document.getElementById('logs-container');
+    if (logsContainer && document.getElementById('logs-tab').classList.contains('active')) {
+      const timestamp = logData.timestamp;
+      const message = logData.message;
+      logsContainer.textContent += `[${timestamp}] ${message}\n`;
+      // Auto-scroll to bottom
+      logsContainer.scrollTop = logsContainer.scrollHeight;
+    }
+  });
+}
+
 // Initialize app
 async function init() {
   await loadClients();
@@ -13,6 +27,12 @@ async function init() {
   await loadLogs();
   updateScanStatus();
   setInterval(updateScanStatus, 5000);
+  
+  // If we're on the leads tab at startup, load leads
+  const leadsTab = document.getElementById('leads-tab');
+  if (leadsTab && leadsTab.classList.contains('active')) {
+    await loadLeads();
+  }
 }
 
 // Load clients
@@ -138,12 +158,17 @@ function populateClientFilter() {
 function filterLeads() {
   const filterClient = document.getElementById('filter-client');
   const filterType = document.getElementById('filter-type');
+  const filterTime = document.getElementById('filter-time');
   const clientValue = filterClient ? filterClient.value : '';
   const typeValue = filterType ? filterType.value : '';
+  const timeValue = filterTime ? filterTime.value : '';
+  
   filteredLeads = [...allLeads];
+  
   if (clientValue) {
     filteredLeads = filteredLeads.filter(lead => lead.clientEmail === clientValue);
   }
+  
   if (typeValue) {
     if (typeValue === 'newly-established') {
       filteredLeads = filteredLeads.filter(lead => !lead.googlePlaceId || !lead.googlePlaceId.startsWith('yelp_api_'));
@@ -151,6 +176,142 @@ function filterLeads() {
       filteredLeads = filteredLeads.filter(lead => lead.googlePlaceId && lead.googlePlaceId.startsWith('yelp_api_'));
     }
   }
+  
+  // Add time filter for "today's leads"
+  if (timeValue === 'today') {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    filteredLeads = filteredLeads.filter(lead => {
+      const leadDate = new Date(lead.foundAt);
+      return leadDate >= todayStart;
+    });
+  }
+  
+  renderLeadsTable();
+}
+
+function renderLeadsTable() {
+  const tbody = document.getElementById('leads-table-body');
+  if (!tbody) return;
+  if (filteredLeads.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No leads found</td></tr>';
+    return;
+  }
+  const formatPhone = (phone) => {
+    if (!phone) return '';
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length === 10) return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
+    return phone;
+  };
+  tbody.innerHTML = filteredLeads.map(lead => {
+    const foundDate = new Date(lead.foundAt).toLocaleString();
+    const fullAddress = [lead.street, lead.city, lead.zipCode].filter(Boolean).join(', ');
+    return `
+      <tr class="hover:bg-gray-50">
+        <td class="px-6 py-4">
+          <div class="font-medium text-gray-900">${lead.businessName}</div>
+          <div class="text-sm text-gray-500">${lead.category || lead.searchKeyword} • ${lead.rating || 'N/A'}⭐ (${lead.reviewCount || 0} reviews)</div>
+        </td>
+        <td class="px-6 py-4 text-sm text-gray-600">${lead.clientEmail}</td>
+        <td class="px-6 py-4 text-sm">
+          ${lead.phone ? `<div>📞 ${formatPhone(lead.phone)}</div>` : ''}
+          ${lead.website ? `<div class="truncate max-w-xs"><a href="${lead.website}" target="_blank" class="text-purple-600 hover:underline">🌐 Website</a></div>` : ''}
+        </td>
+        <td class="px-6 py-4 text-sm text-gray-600">
+          <div class="font-medium">${lead.city || lead.targetCity}</div>
+          ${fullAddress ? `<div class="text-xs text-gray-500 mt-1">${fullAddress}</div>` : ''}
+        </td>
+        <td class="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">${foundDate}</td>
+        <td class="px-6 py-4 text-sm space-x-2 whitespace-nowrap">
+          <a href="${lead.googleMapsUrl}" target="_blank" class="text-purple-600 hover:text-purple-900 font-medium">View</a>
+          <button onclick="deleteLead(${lead.id})" class="text-red-600 hover:text-red-900 font-medium">Delete</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function updateLeadsStats() {
+  const stats = await window.electronAPI.getLeadsStats();
+  const statsContainer = document.getElementById('leads-stats');
+  if (!statsContainer) return;
+  statsContainer.innerHTML = `
+    <div class="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-4 rounded-lg">
+      <div class="text-3xl font-bold">${stats.total}</div>
+      <div class="text-sm opacity-90">Total Leads</div>
+    </div>
+    <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 rounded-lg">
+      <div class="text-3xl font-bold">${stats.totalClients}</div>
+      <div class="text-sm opacity-90">Active Clients</div>
+    </div>
+    <div class="bg-gradient-to-br from-green-500 to-green-600 text-white p-4 rounded-lg">
+      <div class="text-3xl font-bold">${stats.today}</div>
+      <div class="text-sm opacity-90">Today</div>
+    </div>
+    <div class="bg-gradient-to-br from-orange-500 to-orange-600 text-white p-4 rounded-lg">
+      <div class="text-3xl font-bold">${stats.thisWeek}</div>
+      <div class="text-sm opacity-90">This Week</div>
+    </div>
+  `;
+}
+
+async function deleteLead(leadId) {
+  if (confirm('Are you sure you want to delete this lead?')) {
+    const result = await window.electronAPI.deleteLead(leadId);
+    if (result.success) {
+      await loadLeads();
+      await updateDashboardStats();
+    }
+  }
+}
+
+function populateClientFilter() {
+  const filter = document.getElementById('filter-client');
+  if (!filter) return;
+  const currentValue = filter.value;
+  const uniqueClients = [...new Set(allLeads.map(lead => lead.clientEmail))];
+  filter.innerHTML = '<option value="">All Clients</option>';
+  uniqueClients.forEach(email => {
+    const option = document.createElement('option');
+    option.value = email;
+    option.textContent = email;
+    filter.appendChild(option);
+  });
+  filter.value = currentValue;
+}
+
+function filterLeads() {
+  const filterClient = document.getElementById('filter-client');
+  const filterType = document.getElementById('filter-type');
+  const filterTime = document.getElementById('filter-time');
+  const clientValue = filterClient ? filterClient.value : '';
+  const typeValue = filterType ? filterType.value : '';
+  const timeValue = filterTime ? filterTime.value : '';
+  
+  filteredLeads = [...allLeads];
+  
+  if (clientValue) {
+    filteredLeads = filteredLeads.filter(lead => lead.clientEmail === clientValue);
+  }
+  
+  if (typeValue) {
+    if (typeValue === 'newly-established') {
+      filteredLeads = filteredLeads.filter(lead => !lead.googlePlaceId || !lead.googlePlaceId.startsWith('yelp_api_'));
+    } else if (typeValue === 'poaches') {
+      filteredLeads = filteredLeads.filter(lead => lead.googlePlaceId && lead.googlePlaceId.startsWith('yelp_api_'));
+    }
+  }
+  
+  // Add time filter
+  if (timeValue === 'today') {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    filteredLeads = filteredLeads.filter(lead => {
+      const leadDate = new Date(lead.foundAt);
+      return leadDate >= todayStart;
+    });
+  }
+  
   renderLeadsTable();
 }
 
@@ -338,8 +499,13 @@ function switchTab(tabName) {
     event.target.classList.remove('border-transparent', 'text-gray-600');
     event.target.classList.add('border-purple-600', 'text-purple-600', 'font-semibold');
   }
-  if (tabName === 'logs') loadLogs();
-  else if (tabName === 'leads') loadLeads();
+  
+  // Load data based on tab
+  if (tabName === 'logs') {
+    loadLogs();
+  } else if (tabName === 'leads') {
+    loadLeads(); // Make sure this is called!
+  }
 }
 
 // Logs functions

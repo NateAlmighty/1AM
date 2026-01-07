@@ -1,7 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose protected methods that allow the renderer process to use
-// the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   // Clients
   getClients: () => ipcRenderer.invoke('get-clients'),
@@ -23,5 +21,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Logs
   getLogs: () => ipcRenderer.invoke('get-logs'),
-  clearLogs: () => ipcRenderer.invoke('clear-logs')
+  clearLogs: () => ipcRenderer.invoke('clear-logs'),
+  onLogUpdate: (callback) => ipcRenderer.on('log-update', (event, data) => callback(data))
 });
