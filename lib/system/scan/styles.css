@@ -1,0 +1,20 @@
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.log-container { font-family: 'Courier New', monospace; }
+.status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+}
+.status-active { background-color: #10b981; }
+.status-inactive { background-color: #ef4444; }
+.status-scanning {
+  background-color: #f59e0b;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}

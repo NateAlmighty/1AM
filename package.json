@@ -1,0 +1,27 @@
+{
+  "name": "lead-broker-hub",
+  "version": "1.0.0",
+  "description": "Lead generation dashboard for managing multiple clients",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "keywords": [
+    "electron",
+    "playwright",
+    "lead-generation"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^39.2.7",
+    "node-fetch": "^2.6.7",
+    "nodemailer": "^7.0.12",
+    "playwright": "^1.40.0",
+    "sql.js": "^1.10.3"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.9.1"
+  }
+}
